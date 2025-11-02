@@ -1,0 +1,348 @@
+# generate_dataset.py - Generate Real-World EV Charging Station Dataset
+import pandas as pd
+import numpy as np
+import json
+from datetime import datetime, timedelta
+
+class EVChargingDatasetGenerator:
+    """
+    Generate realistic EV charging station dataset with multiple data sources
+    """
+    
+    def __init__(self, seed=42):
+        np.random.seed(seed)
+        self.networks = ['Tesla', 'ChargePoint', 'EVgo', 'Electrify America', 
+                        'Shell Recharge', 'BP Pulse', 'Ionity', 'Volta', 
+                        'Blink', 'Greenlots']
+        
+        self.connector_types = ['CCS', 'CHAdeMO', 'Tesla Supercharger', 'Type 2']
+        
+        self.amenities_options = [
+            'WiFi', 'Restroom', 'Cafe', 'Shopping', 'Restaurant', 
+            'ATM', 'Parking', 'Waiting Area', 'Vending Machine'
+        ]
+        
+        self.location_types = [
+            'Shopping Mall', 'Highway Rest Stop', 'Downtown', 'Parking Garage',
+            'Hotel', 'Restaurant', 'Gas Station', 'Office Complex', 
+            'Airport', 'University', 'Hospital', 'Train Station'
+        ]
+    
+    def generate_station_name(self, network, location_type, index):
+        """Generate realistic station names"""
+        suffixes = ['Hub', 'Station', 'Plaza', 'Center', 'Express', 
+                   'Fast Charge', 'Supercharger', 'Charging Point']
+        
+        if network == 'Tesla':
+            return f"Tesla Supercharger {location_type}"
+        else:
+            suffix = np.random.choice(suffixes)
+            return f"{network} {location_type} {suffix}"
+    
+    def generate_coordinates(self, n_stations, city='san_francisco'):
+        """Generate GPS coordinates for different cities"""
+        city_bounds = {
+            'san_francisco': {'lat': (37.70, 37.85), 'lng': (-122.50, -122.35)},
+            'los_angeles': {'lat': (33.90, 34.15), 'lng': (-118.50, -118.20)},
+            'new_york': {'lat': (40.65, 40.85), 'lng': (-74.05, -73.85)},
+            'chicago': {'lat': (41.80, 42.00), 'lng': (-87.80, -87.60)},
+            'houston': {'lat': (29.65, 29.85), 'lng': (-95.50, -95.30)}
+        }
+        
+        bounds = city_bounds.get(city, city_bounds['san_francisco'])
+        
+        latitudes = np.random.uniform(bounds['lat'][0], bounds['lat'][1], n_stations)
+        longitudes = np.random.uniform(bounds['lng'][0], bounds['lng'][1], n_stations)
+        
+        return latitudes, longitudes
+    
+    def generate_power_distribution(self, n_stations):
+        """Generate realistic power distribution"""
+        # Power levels and their probabilities
+        power_levels = [50, 100, 150, 250, 350]
+        probabilities = [0.15, 0.25, 0.30, 0.20, 0.10]
+        
+        return np.random.choice(power_levels, n_stations, p=probabilities)
+    
+    def generate_pricing(self, power_kw, network):
+        """Generate dynamic pricing based on power and network"""
+        base_prices = {
+            'Tesla': 0.30,
+            'ChargePoint': 0.35,
+            'EVgo': 0.38,
+            'Electrify America': 0.43,
+            'Shell Recharge': 0.32,
+            'BP Pulse': 0.34,
+            'Ionity': 0.45,
+            'Volta': 0.00,  # Often free
+            'Blink': 0.36,
+            'Greenlots': 0.33
+        }
+        
+        base_price = base_prices.get(network, 0.35)
+        
+        # Higher power = slightly higher price
+        power_multiplier = 1 + (power_kw / 350) * 0.2
+        
+        # Add some randomness
+        noise = np.random.uniform(0.95, 1.05)
+        
+        final_price = base_price * power_multiplier * noise
+        
+        return round(final_price, 2)
+    
+    def generate_availability(self, total_chargers):
+        """Generate realistic availability"""
+        # Typically 60-90% available
+        availability_rate = np.random.uniform(0.60, 0.90)
+        available = int(total_chargers * availability_rate)
+        return max(0, min(available, total_chargers))
+    
+    def generate_rating(self, network, power_kw):
+        """Generate ratings based on network reputation and power"""
+        network_base_ratings = {
+            'Tesla': 4.7,
+            'Electrify America': 4.5,
+            'ChargePoint': 4.4,
+            'Ionity': 4.6,
+            'Shell Recharge': 4.3,
+            'BP Pulse': 4.2,
+            'EVgo': 4.1,
+            'Greenlots': 4.0,
+            'Blink': 3.9,
+            'Volta': 4.5
+        }
+        
+        base_rating = network_base_ratings.get(network, 4.0)
+        
+        # Higher power stations tend to have better ratings
+        power_bonus = (power_kw / 350) * 0.3
+        
+        # Add randomness
+        noise = np.random.uniform(-0.3, 0.3)
+        
+        rating = base_rating + power_bonus + noise
+        
+        return round(np.clip(rating, 3.0, 5.0), 1)
+    
+    def generate_amenities(self, location_type):
+        """Generate amenities based on location type"""
+        location_amenities = {
+            'Shopping Mall': ['WiFi', 'Restroom', 'Shopping', 'Restaurant', 'Parking'],
+            'Highway Rest Stop': ['Restroom', 'Vending Machine', 'Parking'],
+            'Downtown': ['WiFi', 'Cafe', 'Restaurant', 'ATM'],
+            'Parking Garage': ['Parking', 'Waiting Area'],
+            'Hotel': ['WiFi', 'Restroom', 'Restaurant', 'Parking'],
+            'Restaurant': ['Restroom', 'WiFi'],
+            'Gas Station': ['Restroom', 'Vending Machine', 'ATM'],
+            'Office Complex': ['WiFi', 'Parking', 'Cafe'],
+            'Airport': ['WiFi', 'Restroom', 'Restaurant', 'Shopping', 'ATM'],
+            'University': ['WiFi', 'Parking', 'Cafe'],
+            'Hospital': ['Parking', 'Cafe', 'ATM'],
+            'Train Station': ['WiFi', 'Restroom', 'Vending Machine']
+        }
+        
+        base_amenities = location_amenities.get(location_type, ['WiFi'])
+        
+        # Randomly include 3-5 amenities
+        n_amenities = min(len(base_amenities), np.random.randint(2, 6))
+        selected = np.random.choice(base_amenities, n_amenities, replace=False)
+        
+        return ','.join(sorted(selected))
+    
+    def generate_operational_hours(self, location_type):
+        """Generate operational hours based on location"""
+        always_open = ['Highway Rest Stop', 'Gas Station', 'Airport', 'Train Station']
+        
+        if location_type in always_open or np.random.random() > 0.7:
+            return '24/7'
+        else:
+            hours = ['6AM-10PM', '7AM-9PM', '8AM-8PM', '5AM-11PM']
+            return np.random.choice(hours)
+    
+    def generate_dataset(self, n_stations=100, city='san_francisco'):
+        """Generate complete charging station dataset"""
+        print(f"Generating dataset with {n_stations} stations for {city}...")
+        
+        # Generate networks
+        networks = np.random.choice(self.networks, n_stations)
+        
+        # Generate location types
+        location_types = np.random.choice(self.location_types, n_stations)
+        
+        # Generate coordinates
+        latitudes, longitudes = self.generate_coordinates(n_stations, city)
+        
+        # Generate power levels
+        charging_powers = self.generate_power_distribution(n_stations)
+        
+        # Generate total chargers (2-20 per station)
+        total_chargers = np.random.randint(2, 21, n_stations)
+        
+        # Build dataset
+        data = []
+        
+        for i in range(n_stations):
+            network = networks[i]
+            location_type = location_types[i]
+            power = charging_powers[i]
+            total = total_chargers[i]
+            
+            station = {
+                'station_id': i + 1,
+                'name': self.generate_station_name(network, location_type, i),
+                'network': network,
+                'location_type': location_type,
+                'latitude': round(latitudes[i], 6),
+                'longitude': round(longitudes[i], 6),
+                'charging_power_kw': int(power),
+                'total_chargers': int(total),
+                'available_chargers': self.generate_availability(total),
+                'price_per_kwh': self.generate_pricing(power, network),
+                'rating': self.generate_rating(network, power),
+                'connector_type': np.random.choice(self.connector_types),
+                'amenities': self.generate_amenities(location_type),
+                'operational_hours': self.generate_operational_hours(location_type),
+                'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            
+            data.append(station)
+        
+        df = pd.DataFrame(data)
+        
+        # Add derived features
+        df['availability_rate'] = df['available_chargers'] / df['total_chargers']
+        df['power_category'] = pd.cut(df['charging_power_kw'], 
+                                      bins=[0, 75, 125, 200, 300, 400],
+                                      labels=['Level 2', 'DC Fast', 'High Power', 
+                                             'Ultra Fast', 'Extreme'])
+        
+        return df
+    
+    def save_dataset(self, df, format='csv'):
+        """Save dataset in multiple formats"""
+        import os
+        os.makedirs('data', exist_ok=True)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        if format == 'csv':
+            filename = f'data/ev_charging_stations_{timestamp}.csv'
+            df.to_csv(filename, index=False)
+            print(f"✓ Saved CSV: {filename}")
+        
+        elif format == 'excel':
+            filename = f'data/ev_charging_stations_{timestamp}.xlsx'
+            df.to_excel(filename, index=False, engine='openpyxl')
+            print(f"✓ Saved Excel: {filename}")
+        
+        elif format == 'json':
+            filename = f'data/ev_charging_stations_{timestamp}.json'
+            df.to_json(filename, orient='records', indent=2)
+            print(f"✓ Saved JSON: {filename}")
+        
+        elif format == 'all':
+            self.save_dataset(df, 'csv')
+            self.save_dataset(df, 'excel')
+            self.save_dataset(df, 'json')
+    
+    def generate_statistics_report(self, df):
+        """Generate comprehensive statistics report"""
+        print("\n" + "="*70)
+        print("EV CHARGING STATIONS DATASET - STATISTICS REPORT")
+        print("="*70)
+        
+        print(f"\nTotal Stations: {len(df)}")
+        print(f"Date Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        print("\n--- Network Distribution ---")
+        print(df['network'].value_counts().to_string())
+        
+        print("\n--- Power Distribution ---")
+        print(df['charging_power_kw'].value_counts().sort_index().to_string())
+        
+        print("\n--- Location Type Distribution ---")
+        print(df['location_type'].value_counts().head(10).to_string())
+        
+        print("\n--- Statistical Summary ---")
+        summary = df[['charging_power_kw', 'price_per_kwh', 'rating', 
+                     'total_chargers', 'available_chargers']].describe()
+        print(summary.to_string())
+        
+        print("\n--- Availability Analysis ---")
+        print(f"Average Availability Rate: {df['availability_rate'].mean():.1%}")
+        print(f"Stations with 100% Availability: {(df['availability_rate'] == 1.0).sum()}")
+        print(f"Stations with <50% Availability: {(df['availability_rate'] < 0.5).sum()}")
+        
+        print("\n--- Pricing Analysis ---")
+        print(f"Average Price: ${df['price_per_kwh'].mean():.2f}/kWh")
+        print(f"Price Range: ${df['price_per_kwh'].min():.2f} - ${df['price_per_kwh'].max():.2f}")
+        
+        print("\n--- Rating Analysis ---")
+        print(f"Average Rating: {df['rating'].mean():.2f}⭐")
+        print(f"Highest Rated Stations: {(df['rating'] >= 4.5).sum()}")
+        
+        print("\n" + "="*70)
+
+def main():
+    """Main execution"""
+    print("="*70)
+    print("EV CHARGING STATIONS DATASET GENERATOR")
+    print("="*70)
+    
+    # Initialize generator
+    generator = EVChargingDatasetGenerator(seed=42)
+    
+    # Generate datasets for multiple cities
+    cities = {
+        'san_francisco': 100,
+        'los_angeles': 80,
+        'new_york': 120,
+        'chicago': 70,
+        'houston': 60
+    }
+    
+    all_stations = []
+    
+    for city, n_stations in cities.items():
+        print(f"\nGenerating data for {city.replace('_', ' ').title()}...")
+        df_city = generator.generate_dataset(n_stations, city)
+        all_stations.append(df_city)
+    
+    # Combine all cities
+    df_complete = pd.concat(all_stations, ignore_index=True)
+    df_complete['station_id'] = range(1, len(df_complete) + 1)
+    
+    print(f"\n✓ Generated {len(df_complete)} total stations across {len(cities)} cities")
+    
+    # Save in multiple formats
+    print("\nSaving datasets...")
+    generator.save_dataset(df_complete, format='all')
+    
+    # Also save individual city datasets
+    print("\nSaving individual city datasets...")
+    for city_df in all_stations:
+        city_name = city_df['location_type'].mode()[0]
+        filename = f'data/ev_charging_{city_name.lower().replace(" ", "_")}.csv'
+        city_df.to_csv(filename, index=False)
+    
+    # Generate statistics
+    generator.generate_statistics_report(df_complete)
+    
+    # Save sample for quick testing
+    df_sample = df_complete.sample(50, random_state=42)
+    df_sample.to_csv('data/ev_charging_stations_sample.csv', index=False)
+    print("\n✓ Saved sample dataset (50 stations) for testing")
+    
+    print("\n" + "="*70)
+    print("DATASET GENERATION COMPLETED SUCCESSFULLY!")
+    print("="*70)
+    print("\nFiles created in 'data/' directory:")
+    print("  - ev_charging_stations_YYYYMMDD_HHMMSS.csv")
+    print("  - ev_charging_stations_YYYYMMDD_HHMMSS.xlsx")
+    print("  - ev_charging_stations_YYYYMMDD_HHMMSS.json")
+    print("  - ev_charging_stations_sample.csv")
+    print("\nYou can now use these datasets with the Streamlit application!")
+
+if __name__ == "__main__":
+    main()
