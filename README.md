@@ -47,26 +47,7 @@ ev-charging-locator/
 
 
 Features: station_id: Integer, Unique identifier name: String, Station name latitude: Float, GPS latitude longitude: Float, GPS longitude charging_power_kw: Integer, Charging power (50350 kW) price_per_kwh: Float, Price per kilowatthour (0.250.50) available_chargers: Integer, Currently available chargers total_chargers: Integer, Total chargers at station rating: Float, User rating (3.55.0) connector_type: String, CCS, CHAdeMO, Tesla, Type 2 amenities: String, Available facilities operational_hours: String, Operating hours network: String, Charging network provider
-Installation & Setup
-Prerequisites Python 3.9 or higher pip (Python package manager) Git
-Step 1: Clone the Repository
-git clone [https://github.com/yourusername/evcharginglocator.git](https://github.com/yourusername/evcharginglocator.git)
-cd evcharginglocator
 
-Step 2: Create Virtual Environment
-# Windows
-python m venv venv
-venv\Scripts\activate
-
-# macOS/Linux
-python3 m venv venv
-source venv/bin/activate
-
-Step 3: Install Dependencies
-pip install r requirements.txt
-
-Step 4: Run the Application
-streamlit run app.py
 
 The application will open in your default browser at http://localhost:8501
 Usage Guide
